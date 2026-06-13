@@ -1,0 +1,150 @@
+{
+  "name": "Lead Follow-Up Sequence – Day 2 / 5 / 7",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "Daily Trigger (9am)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "read-leads",
+      "name": "Read All Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst leads = $input.all();\n\nconst followUpLeads = leads.filter(item => {\n  const lead = item.json;\n  if (!lead.Timestamp || lead['Follow Up Status'] === 'Completed') return false;\n  \n  const submittedAt = new Date(lead.Timestamp);\n  const daysSince = Math.floor((now - submittedAt) / (1000 * 60 * 60 * 24));\n  \n  // Day 2: first check-in\n  if (daysSince === 2 && lead['Follow Up Status'] === 'Scheduled') return true;\n  // Day 5: additional options\n  if (daysSince === 5 && lead['Follow Up Status'] === 'Day2Sent') return true;\n  // Day 7: final follow-up\n  if (daysSince === 7 && lead['Follow Up Status'] === 'Day5Sent') return true;\n  \n  return false;\n}).map(item => {\n  const lead = item.json;\n  const submittedAt = new Date(lead.Timestamp);\n  const daysSince = Math.floor((now - submittedAt) / (1000 * 60 * 60 * 24));\n  \n  let followUpType = 'day2';\n  let subject = '';\n  let body = '';\n  \n  if (daysSince === 2) {\n    followUpType = 'day2';\n    subject = `Still searching for ${lead['Property Type']} in ${lead.Location}?`;\n    body = `Hi ${lead.Name},\\n\\nI wanted to check in and see if you had any questions about your property search in ${lead.Location}.\\n\\nOur team has been reviewing options in your price range (${lead.Budget}) and we'd love to share what we've found. Would you be available for a quick call this week?\\n\\nBest regards,\\nYour LeadFlowAI Agent`;\n  } else if (daysSince === 5) {\n    followUpType = 'day5';\n    subject = `New ${lead['Property Type']} listings in ${lead.Location} — just for you`;\n    body = `Hi ${lead.Name},\\n\\nWe've just identified 3 new ${lead['Property Type']} listings in ${lead.Location} that match your criteria perfectly, all within your ${lead.Budget} budget.\\n\\nI'd love to set up viewings at your convenience. Simply reply to this email or call us directly.\\n\\nWarm regards,\\nYour LeadFlowAI Agent`;\n  } else if (daysSince === 7) {\n    followUpType = 'day7';\n    subject = `Final note on your property search, ${lead.Name.split(' ')[0]}`;\n    body = `Hi ${lead.Name},\\n\\nThis is my final note regarding your property inquiry. I don't want to keep your inbox busy, but I wanted to make sure you found what you were looking for.\\n\\nIf you're still actively searching or have any questions, please don't hesitate to reach out — we're here to help you find the perfect ${lead['Property Type']} in ${lead.Location}.\\n\\nWith warm regards,\\nYour LeadFlowAI Agent`;\n  }\n  \n  return {\n    json: {\n      ...lead,\n      followUpType,\n      followUpSubject: subject,\n      followUpBody: body,\n      daysSince,\n    }\n  };\n});\n\nreturn followUpLeads;"
+      },
+      "id": "filter-due-leads",
+      "name": "Filter Leads Due for Follow-Up",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "={{ $json.followUpSubject }}",
+        "emailType": "text",
+        "message": "={{ $json.followUpBody }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-followup-email",
+      "name": "Send Follow-Up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst statusMap = {\n  day2: 'Day2Sent',\n  day5: 'Day5Sent',\n  day7: 'Completed'\n};\nreturn [{ json: { ...item, newStatus: statusMap[item.followUpType] || 'Scheduled' } }];"
+      },
+      "id": "prepare-status-update",
+      "name": "Prepare Status Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Follow Up Status": "={{ $json.newStatus }}"
+          }
+        },
+        "where": {
+          "values": [
+            {
+              "column": "Email",
+              "value": "={{ $json.Email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-followup-status",
+      "name": "Update Follow-Up Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Daily Trigger (9am)": {
+      "main": [
+        [{ "node": "Read All Leads", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read All Leads": {
+      "main": [
+        [{ "node": "Filter Leads Due for Follow-Up", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter Leads Due for Follow-Up": {
+      "main": [
+        [{ "node": "Send Follow-Up Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Follow-Up Email": {
+      "main": [
+        [{ "node": "Prepare Status Update", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Status Update": {
+      "main": [
+        [{ "node": "Update Follow-Up Status", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [
+    { "name": "real-estate" },
+    { "name": "follow-up" },
+    { "name": "email-sequence" }
+  ]
+}

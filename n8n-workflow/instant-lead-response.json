@@ -1,0 +1,307 @@
+{
+  "name": "Real Estate Lead Automation – Enhanced",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "real-estate-lead",
+        "options": {}
+      },
+      "id": "c57ac101-cb87-445c-af01-13a03e01fab6",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 304],
+      "webhookId": "f81876fc-b567-4618-adee-1861e8df4ee8"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "1", "name": "name",      "value": "={{ $json.body.name }}",      "type": "string" },
+            { "id": "2", "name": "email",     "value": "={{ $json.body.email }}",     "type": "string" },
+            { "id": "3", "name": "property",  "value": "={{ $json.body.property }}",  "type": "string" },
+            { "id": "4", "name": "budget",    "value": "={{ $json.body.budget }}",    "type": "string" },
+            { "id": "5", "name": "location",  "value": "={{ $json.body.location }}",  "type": "string" },
+            { "id": "6", "name": "message",   "value": "={{ $json.body.message }}",   "type": "string" },
+            { "id": "7", "name": "timestamp", "value": "={{ $now.toISO() }}",         "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a91bab46-0114-4ae6-a285-be1430359d15",
+      "name": "Normalize Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [464, 304]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "18BAcZr86UszXccXdmqzK4w0ENDt_YxjN0Ljos1K4F-E"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Real Estate Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp":       "={{ $json.timestamp }}",
+            "Name":            "={{ $json.name }}",
+            "Email":           "={{ $json.email }}",
+            "Location":        "={{ $json.location }}",
+            "Property Type":   "={{ $json.property }}",
+            "Budget":          "={{ $json.budget }}",
+            "Message":         "={{ $json.message }}",
+            "Lead Score":      "Pending",
+            "Intent":          "Pending",
+            "Follow Up Status":"Scheduled"
+          }
+        },
+        "options": {}
+      },
+      "id": "f17965fb-9ee3-4d0c-bb79-31c5090def91",
+      "name": "Save to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [688, 304],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0CFX7EQA0OoS52c7",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"llama-3.3-70b-versatile\", \"temperature\": 0.7, \"max_tokens\": 1000, \"response_format\": { \"type\": \"json_object\" }, \"messages\": [ { \"role\": \"system\", \"content\": \"You are an expert real estate lead analyst. Analyze the inquiry and return ONLY a valid JSON object with exactly these fields:\\n- lead_score: integer 0-100 (qualification score based on budget, clarity, and intent)\\n- intent: exactly one of buy, rent, or invest\\n- summary: 1-2 sentences describing the buyer's needs and urgency\\n- urgency: exactly one of high, medium, or low\\n- reply_email: a warm professional 3-paragraph email. Paragraph 1: thank them by name and acknowledge their specific request. Paragraph 2: confirm you are working on curated options for their budget and location. Paragraph 3: let them know an agent will follow up within 24 hours and invite questions.\\nDo NOT include any text outside the JSON object.\" }, { \"role\": \"user\", \"content\": \"Name: \" + $json.name + \"\\nEmail: \" + $json.email + \"\\nProperty: \" + $json.property + \"\\nBudget: \" + $json.budget + \"\\nLocation: \" + $json.location + \"\\nMessage: \" + ($json.message || \"No additional details provided.\") } ] } }}",
+        "options": {}
+      },
+      "id": "c9bafa42-19ea-42d0-b2c6-e90e7940d2d8",
+      "name": "Groq AI Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [912, 304],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "XaOV2uvD8688bN2t",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let parsed;\ntry {\n  const content = $input.item.json.choices[0].message.content;\n  const clean = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  // Fallback if AI returns bad JSON\n  const d = $('Normalize Data').item.json;\n  parsed = {\n    lead_score: 50,\n    intent: 'buy',\n    urgency: 'medium',\n    summary: 'Buyer inquiry received. Manual review recommended.',\n    reply_email: `Dear ${d.name},\\n\\nThank you for reaching out about your property search. We have received your inquiry for a ${d.property} in ${d.location} within a budget of ${d.budget}.\\n\\nOur team is reviewing your requirements and preparing curated options that match your criteria.\\n\\nOne of our specialist agents will be in touch within 24 hours. Please don't hesitate to reply with any questions.\\n\\nWarm regards,\\nReal Estate Team`\n  };\n}\nreturn { ...parsed };"
+      },
+      "id": "741386ac-456c-4539-a325-8d50fb988a5c",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1136, 304]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "18BAcZr86UszXccXdmqzK4w0ENDt_YxjN0Ljos1K4F-E"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Real Estate Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Lead Score":       "={{ $json.lead_score }}",
+            "Intent":           "={{ $json.intent }}",
+            "Follow Up Status": "Scheduled"
+          }
+        },
+        "where": {
+          "values": [
+            {
+              "column": "Email",
+              "value": "={{ $('Normalize Data').item.json.email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-score-node",
+      "name": "Update Lead Score in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [1360, 160],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0CFX7EQA0OoS52c7",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Normalize Data').item.json.email }}",
+        "subject": "={{ $json.lead_score >= 70 ? '🏡 Your Property Match is Ready – ' : 'Re: ' }}{{ $('Normalize Data').item.json.property }} in {{ $('Normalize Data').item.json.location }}",
+        "emailType": "text",
+        "message": "={{ $json.reply_email }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "740a94e8-a3fb-42e9-973b-a48515079cca",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1360, 420],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "kFsWS7ggNd7vLpKu",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "days"
+      },
+      "id": "16d3073d-c609-442c-8e07-25b588d959e8",
+      "name": "Wait 1 Day",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1584, 420],
+      "webhookId": "3b51c587-5ddf-4871-ab10-844d63357532"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Normalize Data').item.json.email }}",
+        "subject": "={{ \"Still looking for a \" + $('Normalize Data').item.json.property + \" in \" + $('Normalize Data').item.json.location + \"?\" }}",
+        "emailType": "text",
+        "message": "={{ \"Dear \" + $('Normalize Data').item.json.name + \",\\n\\nI wanted to follow up on your enquiry for a \" + $('Normalize Data').item.json.property + \" in \" + $('Normalize Data').item.json.location + \" within a budget of \" + $('Normalize Data').item.json.budget + \".\\n\\nWe have been shortlisting options that match your criteria and would love to arrange a viewing at your convenience. A few questions that might help us narrow things down:\\n\\n• Are you flexible on location within \" + $('Normalize Data').item.json.location + \"?\\n• Is your timeline urgent or are you exploring options?\\n• Do you have any specific requirements we should know about?\\n\\nSimply reply to this email or call us directly — we are ready to help.\\n\\nWarm regards,\\nReal Estate Team\" }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f35e537b-5d4d-4f8b-9044-ead71ac791b5",
+      "name": "Follow-up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1808, 420],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "kFsWS7ggNd7vLpKu",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "18BAcZr86UszXccXdmqzK4w0ENDt_YxjN0Ljos1K4F-E"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Real Estate Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Follow Up Status": "Day1Sent"
+          }
+        },
+        "where": {
+          "values": [
+            {
+              "column": "Email",
+              "value": "={{ $('Normalize Data').item.json.email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-followup-status",
+      "name": "Update Follow-Up Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [2032, 420],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0CFX7EQA0OoS52c7",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🏡 Real Estate Lead Automation – Enhanced\n\n**Flow:**\nWebhook → Normalize → Save Sheet → Groq AI → Parse → Update Score + Send Email → Wait 1 Day → Follow-up → Update Status\n\n**Improvements over v1:**\n✅ response_format: json_object (reliable JSON from Groq)\n✅ Fallback email if AI fails\n✅ Lead score + intent saved back to sheet\n✅ Subject line adapts to lead score (≥70 = priority)\n✅ Follow-up references exact property/budget/location\n✅ Follow-up status tracked in sheet\n✅ urgency field added to AI output\n\n**Sheet columns needed:**\nTimestamp | Name | Email | Location | Property Type | Budget | Message | Lead Score | Intent | Follow Up Status",
+        "height": 320,
+        "width": 420,
+        "color": 4
+      },
+      "id": "sticky-note-enhanced",
+      "name": "Sticky Note – Enhanced",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [128, -100]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Normalize Data", "type": "main", "index": 0 }]]
+    },
+    "Normalize Data": {
+      "main": [[{ "node": "Save to Google Sheets", "type": "main", "index": 0 }]]
+    },
+    "Save to Google Sheets": {
+      "main": [[{ "node": "Groq AI Analysis", "type": "main", "index": 0 }]]
+    },
+    "Groq AI Analysis": {
+      "main": [[{ "node": "Parse AI Response", "type": "main", "index": 0 }]]
+    },
+    "Parse AI Response": {
+      "main": [[
+        { "node": "Update Lead Score in Sheet", "type": "main", "index": 0 },
+        { "node": "Send Email", "type": "main", "index": 0 }
+      ]]
+    },
+    "Send Email": {
+      "main": [[{ "node": "Wait 1 Day", "type": "main", "index": 0 }]]
+    },
+    "Wait 1 Day": {
+      "main": [[{ "node": "Follow-up Email", "type": "main", "index": 0 }]]
+    },
+    "Follow-up Email": {
+      "main": [[{ "node": "Update Follow-Up Status", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "beca6b10afe0e497afe213c8fd58923345d277a819e933361be483a397e71129"
+  },
+  "id": "hCkiosziAOa5wHAc",
+  "tags": []
+}
