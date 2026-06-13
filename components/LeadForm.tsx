@@ -312,7 +312,6 @@ function AutomationFlowPanel() {
   const nodes = [
     { icon: "⚡", label: "Webhook", color: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20" },
     { icon: "📊", label: "Google Sheets", color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
-    { icon: "⚡", label: "Groq LLaMA 3.3", color: "text-[var(--accent)] bg-[var(--accent-dim)] border-[var(--accent)]/20" },
     { icon: "📧", label: "Gmail Send", color: "text-red-400 bg-red-400/10 border-red-400/20" },
   ];
 
